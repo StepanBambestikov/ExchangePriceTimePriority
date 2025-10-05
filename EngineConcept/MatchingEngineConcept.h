@@ -20,12 +20,13 @@ concept MatchingEngineConcept = requires(T engine,
                                          std::function<void(const Trade&)> callback) {
     { engine.submitOrder(order) } -> std::same_as<void>;
 
-    { const_engine.getBuyOrderCount(symbol) } -> std::same_as<size_t>;
-    { const_engine.getSellOrderCount(symbol) } -> std::same_as<size_t>;
-    { const_engine.getTrades() } -> std::convertible_to<const std::vector<Trade>&>;
+    { const_engine.getBuyOrderCount() } -> std::same_as<size_t>;
+    { const_engine.getSellOrderCount() } -> std::same_as<size_t>;
+    //{ const_engine.getTrades() } -> std::convertible_to<const std::vector<Trade>&>;
 
     { engine.clearTrades() } -> std::same_as<void>;
     { engine.setTradeCallback(callback) } -> std::same_as<void>;
+    { engine.name() } -> std::same_as<const char *>;
 };
 
 template<MatchingEngineConcept Engine>

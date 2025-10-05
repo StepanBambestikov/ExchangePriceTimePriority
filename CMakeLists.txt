@@ -3,6 +3,7 @@ project(price_time_priority)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 
 # Optimization flags
 if(NOT CMAKE_BUILD_TYPE)
@@ -33,6 +34,8 @@ add_executable(generic_engine_tests
         EngineConcept/MatchingEngineConcept.h
         EnginImpl/V1/MatchingEngineV1.h
         EngineTestTypes.h
+        EnginImpl/V2/MatchingEngineV2.h
+        EnginImpl/V2_prealloc/MatchingEngineV2_prealloc.h
 )
 
 target_link_libraries(generic_engine_tests
@@ -52,6 +55,15 @@ target_link_libraries(performance_benchmarks
         GTest::gtest
         GTest::gtest_main
 )
+
+add_executable(baseline_benchmark
+        main.cpp
+        Order.h
+        MatchingEngineConcept.h
+        EngineTestTypes.h
+)
+
+target_link_libraries(baseline_benchmark PRIVATE)
 
 # Обнаружение тестов
 include(GoogleTest)

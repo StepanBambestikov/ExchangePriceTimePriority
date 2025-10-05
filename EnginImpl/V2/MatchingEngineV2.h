@@ -4,73 +4,98 @@
 #include <set>
 #include <memory>
 #include <string>
+#include <deque>
 #include <vector>
 #include <functional>
+#include <memory_resource>
 
 // ============================================================================
 // MULTISET-BASED IMPLEMENTATION without any optimization
 //
 // ============================================================================
 
-struct BuyComparator {
-    bool operator()(const std::shared_ptr<Order>& a, const std::shared_ptr<Order>& b) const {
-        if (a->price != b->price) {
-            return a->price > b->price;
-        }
-        return a->timestamp < b->timestamp;
-    }
-};
 
-struct SellComparator {
-    bool operator()(const std::shared_ptr<Order>& a, const std::shared_ptr<Order>& b) const {
-        if (a->price != b->price) {
-            return a->price < b->price;
-        }
-        return a->timestamp < b->timestamp;
-    }
-};
-
-class OrderBook {
+class OrderBookHashMap {
 public:
-    using BuyBook = std::multiset<std::shared_ptr<Order>, BuyComparator>;
-    using SellBook = std::multiset<std::shared_ptr<Order>, SellComparator>;
 
-    BuyBook buy_orders;
-    SellBook sell_orders;
+    struct PriceLevel {
+        int price;
+        std::deque<std::shared_ptr<Order>> orders;
+        uint64_t total_quantity;
+    };
+
+    std::map<int, PriceLevel, std::greater<>> buy_levels;
+    std::map<int, PriceLevel, std::less<>> sell_levels;
 
     void addBuyOrder(std::shared_ptr<Order> order) {
-        buy_orders.insert(order);
+        int price = order->price;
+        auto& level = buy_levels[price];  // создает если не существует
+        level.price = price;
+        level.orders.push_back(order);
+        level.total_quantity += order->quantity;
     }
 
     void addSellOrder(std::shared_ptr<Order> order) {
-        sell_orders.insert(order);
+        double price = order->price;
+        auto& level = sell_levels[price];
+        level.price = price;
+        level.orders.push_back(order);
+        level.total_quantity += order->quantity;
     }
 
     void removeBuyOrder(std::shared_ptr<Order> order) {
-        buy_orders.erase(order);
+        double price = order->price;
+        auto it = buy_levels.find(price);
+        if (it == buy_levels.end()) return;
+
+        auto& level = it->second;
+        level.orders.pop_front();  // FIFO - удаляем первый
+        level.total_quantity -= order->quantity;
+
+        // Удаляем price level если пустой
+        if (level.orders.empty()) {
+            buy_levels.erase(it);
+        }
     }
 
     void removeSellOrder(std::shared_ptr<Order> order) {
-        sell_orders.erase(order);
+        double price = order->price;
+        auto it = sell_levels.find(price);
+        if (it == sell_levels.end()) return;
+
+        auto& level = it->second;
+        level.orders.pop_front();
+        level.total_quantity -= order->quantity;
+
+        if (level.orders.empty()) {
+            sell_levels.erase(it);
+        }
     }
 
     [[nodiscard]] std::shared_ptr<Order> getBestBuy() const {
-        return buy_orders.empty() ? nullptr : *buy_orders.begin();
+        if (buy_levels.empty()) return nullptr;
+        // begin() дает лучшую цену (максимальную для buy из-за std::greater)
+        const auto& level = buy_levels.begin()->second;
+        return level.orders.front();
     }
 
     [[nodiscard]] std::shared_ptr<Order> getBestSell() const {
-        return sell_orders.empty() ? nullptr : *sell_orders.begin();
+        if (sell_levels.empty()) return nullptr;
+        // begin() дает лучшую цену (минимальную для sell из-за std::less)
+        const auto& level = sell_levels.begin()->second;
+        return level.orders.front();
     }
+
 };
 
-class MatchingEngineV1 {
+class MatchingEngineV2 {
 public:
     using TradeCallback = std::function<void(const Trade&)>;
 
-    MatchingEngineV1() : next_timestamp_(0) {}
+    MatchingEngineV2() : next_timestamp_(0) {}
 
     static const char * name() {
-        return "MatchingEngineV1";
+        return "MatchingEngineV2";
     }
 
     void setTradeCallback(TradeCallback callback) {
@@ -85,11 +110,11 @@ public:
     }
 
     [[nodiscard]] size_t getBuyOrderCount() const {
-        return book.buy_orders.size();
+        return book.buy_levels.size();
     }
 
     [[nodiscard]] size_t getSellOrderCount() const {
-        return book.sell_orders.size();
+        return book.sell_levels.size();
     }
 
 //    [[nodiscard]] const std::vector<Trade>& getTrades() const {
@@ -113,7 +138,7 @@ private:
         //OrderBook& book = getOrderBook(order->symbol);
 
         if (order->side == Side::BUY) {
-            while (order->quantity > 0 && !book.sell_orders.empty()) {
+            while (order->quantity > 0 && !book.sell_levels.empty()) {
                 auto best_sell = book.getBestSell();
                 uint64_t trade_qty = std::min(order->quantity, best_sell->quantity);
 
@@ -127,7 +152,7 @@ private:
                 }
             }
         } else {
-            while (order->quantity > 0 && !book.buy_orders.empty()) {
+            while (order->quantity > 0 && !book.buy_levels.empty()) {
                 auto best_buy = book.getBestBuy();
                 uint64_t trade_qty = std::min(order->quantity, best_buy->quantity);
 
@@ -146,7 +171,7 @@ private:
     void matchLimitOrder(std::shared_ptr<Order> order) {
 
         if (order->side == Side::BUY) {
-            while (order->quantity > 0 && !book.sell_orders.empty()) {
+            while (order->quantity > 0 && !book.sell_levels.empty()) {
                 auto best_sell = book.getBestSell();
 
                 if (!canMatch(order, best_sell)) {
@@ -168,7 +193,7 @@ private:
                 book.addBuyOrder(order);
             }
         } else {
-            while (order->quantity > 0 && !book.buy_orders.empty()) {
+            while (order->quantity > 0 && !book.buy_levels.empty()) {
                 auto best_buy = book.getBestBuy();
 
                 if (!canMatch(best_buy, order)) {
@@ -212,7 +237,7 @@ private:
 //        return order_books_[symbol];
 //    }
 
-    OrderBook book;
+    OrderBookHashMap book;
     //std::map<std::string, OrderBook> order_books_;
     //std::vector<Trade> trades_;
     TradeCallback trade_callback_;

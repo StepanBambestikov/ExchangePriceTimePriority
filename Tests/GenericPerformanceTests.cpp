@@ -17,7 +17,7 @@ struct BenchmarkMetrics {
     double p999_latency_ns;
     double max_latency_ns;
     double throughput_ops_per_sec;
-    size_t total_trades;
+    //size_t total_trades;
     size_t total_orders;
     const char* engine_name;
 
@@ -28,8 +28,8 @@ struct BenchmarkMetrics {
         std::cout << "╠════════════════════════════════════════════════════════════╣\n";
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "║ Total Orders:    " << std::setw(38) << total_orders << " ║\n";
-        std::cout << "║ Total Trades:    " << std::setw(38) << total_trades << " ║\n";
-        std::cout << "║ Match Rate:      " << std::setw(35) << (100.0 * total_trades / total_orders) << "% ║\n";
+        //std::cout << "║ Total Trades:    " << std::setw(38) << total_trades << " ║\n";
+        //std::cout << "║ Match Rate:      " << std::setw(35) << (100.0 * total_trades / total_orders) << "% ║\n";
         std::cout << "╟────────────────────────────────────────────────────────────╢\n";
         std::cout << "║ LATENCY (nanoseconds)                                      ║\n";
         std::cout << "║   Average:       " << std::setw(38) << avg_latency_ns << " ns ║\n";
@@ -54,7 +54,7 @@ protected:
         latencies_ns.reserve(num_orders);
 
         std::mt19937 rng(42);
-        std::uniform_real_distribution<double> price_dist(99.0, 101.0);
+        std::uniform_int_distribution<int> price_dist(9998, 10003);
         std::uniform_int_distribution<uint64_t> qty_dist(1, 100);
         std::uniform_int_distribution<int> side_dist(0, 1);
         std::uniform_int_distribution<int> type_dist(0, 9);
@@ -64,7 +64,7 @@ protected:
         for (size_t i = 0; i < num_orders; ++i) {
             Side side = side_dist(rng) == 0 ? Side::BUY : Side::SELL;
             OrderType type = type_dist(rng) < 9 ? OrderType::LIMIT : OrderType::MARKET;
-            double price = type == OrderType::LIMIT ? price_dist(rng) : 0.0;
+            int price = type == OrderType::LIMIT ? price_dist(rng)  : 0.0;
             uint64_t qty = qty_dist(rng);
 
             auto order = std::make_shared<Order>(i, "TEST", side, type, price, qty, 0);
@@ -84,8 +84,8 @@ protected:
 
         BenchmarkMetrics metrics;
         metrics.total_orders = num_orders;
-        metrics.total_trades = engine.getTrades().size();
-        metrics.engine_name = MatchingEngineTraits<Engine>::name;
+        //metrics.total_trades = engine.getTrades().size();
+        metrics.engine_name = engine.name();
 
         double sum = 0;
         for (double lat : latencies_ns) sum += lat;
@@ -206,8 +206,8 @@ TYPED_TEST(GenericPerformanceBenchmark, OrderBookDepthImpact) {
         engine.submitOrder(sell);
     }
 
-    std::cout << "Order book depth - Buy: " << engine.getBuyOrderCount("TEST")
-              << ", Sell: " << engine.getSellOrderCount("TEST") << "\n";
+    std::cout << "Order book depth - Buy: " << engine.getBuyOrderCount()
+              << ", Sell: " << engine.getSellOrderCount() << "\n";
 
     std::vector<double> latencies;
     for (size_t i = 0; i < 1000; ++i) {
@@ -229,11 +229,11 @@ TYPED_TEST(GenericPerformanceBenchmark, OrderBookDepthImpact) {
     std::cout << "  P95:  " << latencies[latencies.size() * 95 / 100] << " ns\n";
     std::cout << "  P99:  " << latencies[latencies.size() * 99 / 100] << " ns\n";
 
-    EXPECT_GT(engine.getBuyOrderCount("TEST"), 9000);
+    EXPECT_GT(engine.getBuyOrderCount(), 9000);
 }
 
 TYPED_TEST(GenericPerformanceBenchmark, BaselinePerformance) {
-    const size_t NUM_ORDERS = 100000;
+    const size_t NUM_ORDERS = 50000000;
 
     auto metrics = this->runBenchmark(NUM_ORDERS);
     metrics.print("BASELINE - Current Performance");
