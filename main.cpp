@@ -60,10 +60,10 @@ BenchmarkMetrics runBenchmark(size_t num_orders) {
         int price = type == OrderType::LIMIT ? price_dist(rng) : 0;
         uint64_t qty = qty_dist(rng);
 
-        auto order = std::make_shared<Order>(i, "TEST", side, type, price, qty, 0);
+        auto order = std::make_unique<Order>(i, "TEST", side, type, price, qty, 0);
 
         auto start = std::chrono::high_resolution_clock::now();
-        engine.submitOrder(order);
+        engine.submitOrder(std::move(order));
         auto end = std::chrono::high_resolution_clock::now();
 
         double latency_ns = std::chrono::duration<double, std::nano>(end - start).count();

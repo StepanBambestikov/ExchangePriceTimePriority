@@ -15,10 +15,10 @@
 template<typename T>
 concept MatchingEngineConcept = requires(T engine,
                                          const T const_engine,
-                                         std::shared_ptr<Order> order,
+                                         std::unique_ptr<Order> order,
                                          const std::string& symbol,
                                          std::function<void(const Trade&)> callback) {
-    { engine.submitOrder(order) } -> std::same_as<void>;
+    { engine.submitOrder(std::move(order)) } -> std::same_as<void>;
 
     { const_engine.getBuyOrderCount() } -> std::same_as<size_t>;
     { const_engine.getSellOrderCount() } -> std::same_as<size_t>;
