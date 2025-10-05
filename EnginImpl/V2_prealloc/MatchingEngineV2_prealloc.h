@@ -25,7 +25,7 @@ public:
     };
 
     std::array<std::byte, 2 * 1024 * 1024> buffer_{};  // 2MB
-    std::pmr::monotonic_buffer_resource memory_pool_{buffer_.data(), buffer_.size()};
+    std::pmr::unsynchronized_pool_resource memory_pool_;
 
     std::pmr::map<int, PriceLevel, std::greater<>> buy_levels;
     std::pmr::map<int, PriceLevel, std::less<>> sell_levels;
