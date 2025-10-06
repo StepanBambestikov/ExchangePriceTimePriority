@@ -1,99 +1,85 @@
 #pragma once
 #include "../../EngineConcept/Order.h"
 #include <map>
-#include <set>
 #include <memory>
-#include <string>
 #include <deque>
-#include <vector>
 #include <functional>
-#include <memory_resource>
 
 // ============================================================================
-// MULTISET-BASED IMPLEMENTATION without any optimization
-//
+// OPTIMIZED IMPLEMENTATION with unique_ptr
 // ============================================================================
 
-
-class OrderBookHashMapPreAlloc {
+class OrderBookHashMapPrealloc {
 public:
-
     struct PriceLevel {
         int price;
-        std::pmr::deque<std::shared_ptr<Order>> orders;
+        std::deque<std::unique_ptr<Order>> orders;
         uint64_t total_quantity;
+
+        PriceLevel() : price(0), total_quantity(0) {}
+        explicit PriceLevel(int p) : price(p), total_quantity(0) {}
     };
 
-    std::array<std::byte, 2 * 1024 * 1024> buffer_{};  // 2MB
-    std::pmr::unsynchronized_pool_resource memory_pool_;
+    std::map<int, PriceLevel, std::greater<>> buy_levels;
+    std::map<int, PriceLevel, std::less<>> sell_levels;
 
-    std::pmr::map<int, PriceLevel, std::greater<>> buy_levels;
-    std::pmr::map<int, PriceLevel, std::less<>> sell_levels;
-
-    OrderBookHashMapPreAlloc()
-            : buy_levels{std::greater<>{}, &memory_pool_}
-            , sell_levels{std::less<>{}, &memory_pool_}
-    {}
-
-    void addBuyOrder(std::shared_ptr<Order> order) {
+    void addBuyOrder(std::unique_ptr<Order> order) {
         int price = order->price;
-        auto& level = buy_levels[price];  // создает если не существует
-        level.price = price;
-        level.orders.push_back(order);
-        level.total_quantity += order->quantity;
+        uint64_t quantity = order->quantity;
+
+        auto [it, inserted] = buy_levels.try_emplace(price, price);
+        auto& level = it->second;
+        level.orders.push_back(std::move(order));
+        level.total_quantity += quantity;
     }
 
-    void addSellOrder(std::shared_ptr<Order> order) {
-        double price = order->price;
-        auto& level = sell_levels[price];
-        level.price = price;
-        level.orders.push_back(order);
-        level.total_quantity += order->quantity;
+    void addSellOrder(std::unique_ptr<Order> order) {
+        int price = order->price;
+        uint64_t quantity = order->quantity;
+
+        auto [it, inserted] = sell_levels.try_emplace(price, price);
+        auto& level = it->second;
+        level.orders.push_back(std::move(order));
+        level.total_quantity += quantity;
     }
 
-    void removeBuyOrder(std::shared_ptr<Order> order) {
-        double price = order->price;
+    void removeBuyOrder(int price, uint64_t quantity) {
         auto it = buy_levels.find(price);
         if (it == buy_levels.end()) return;
 
         auto& level = it->second;
-        level.orders.pop_front();  // FIFO - удаляем первый
-        level.total_quantity -= order->quantity;
+        level.orders.pop_front();  // unique_ptr автоматически удалится
+        level.total_quantity -= quantity;
 
-        // Удаляем price level если пустой
         if (level.orders.empty()) {
             buy_levels.erase(it);
         }
     }
 
-    void removeSellOrder(std::shared_ptr<Order> order) {
-        double price = order->price;
+    void removeSellOrder(int price, uint64_t quantity) {
         auto it = sell_levels.find(price);
         if (it == sell_levels.end()) return;
 
         auto& level = it->second;
         level.orders.pop_front();
-        level.total_quantity -= order->quantity;
+        level.total_quantity -= quantity;
 
         if (level.orders.empty()) {
             sell_levels.erase(it);
         }
     }
 
-    [[nodiscard]] std::shared_ptr<Order> getBestBuy() const {
+    [[nodiscard]] Order* getBestBuy() {
         if (buy_levels.empty()) return nullptr;
-        // begin() дает лучшую цену (максимальную для buy из-за std::greater)
-        const auto& level = buy_levels.begin()->second;
-        return level.orders.front();
+        auto& level = buy_levels.begin()->second;
+        return level.orders.front().get();
     }
 
-    [[nodiscard]] std::shared_ptr<Order> getBestSell() const {
+    [[nodiscard]] Order* getBestSell() {
         if (sell_levels.empty()) return nullptr;
-        // begin() дает лучшую цену (минимальную для sell из-за std::less)
-        const auto& level = sell_levels.begin()->second;
-        return level.orders.front();
+        auto& level = sell_levels.begin()->second;
+        return level.orders.front().get();
     }
-
 };
 
 class MatchingEngineV2_prealloc {
@@ -102,19 +88,20 @@ public:
 
     MatchingEngineV2_prealloc() : next_timestamp_(0) {}
 
-    static const char * name() {
-        return "MatchingEngineV2_prealloc";
+    static const char* name() {
+        return "MatchingEngineV2";
     }
 
     void setTradeCallback(TradeCallback callback) {
-        trade_callback_ = callback;
+        trade_callback_ = std::move(callback);
     }
 
-    void submitOrder(std::shared_ptr<Order> order) {
+    // Принимаем unique_ptr
+    void submitOrder(std::unique_ptr<Order> order) {
         if (order->timestamp == 0) {
             order->timestamp = ++next_timestamp_;
         }
-        matchOrder(order);
+        matchOrder(std::move(order));
     }
 
     [[nodiscard]] size_t getBuyOrderCount() const {
@@ -125,129 +112,114 @@ public:
         return book.sell_levels.size();
     }
 
-//    [[nodiscard]] const std::vector<Trade>& getTrades() const {
-//        //return trades_;
-//    }
-
     static void clearTrades() {
-               //trades_.clear();
+        // trades_.clear();
     }
 
 private:
-    void matchOrder(std::shared_ptr<Order> order) {
+    void matchOrder(std::unique_ptr<Order> order) {
         if (order->type == OrderType::MARKET) {
-            matchMarketOrder(order);
+            matchMarketOrder(std::move(order));
         } else {
-            matchLimitOrder(order);
+            matchLimitOrder(std::move(order));
         }
     }
 
-    void matchMarketOrder(std::shared_ptr<Order> order) {
-        //OrderBook& book = getOrderBook(order->symbol);
-
+    void matchMarketOrder(std::unique_ptr<Order> order) {
         if (order->side == Side::BUY) {
             while (order->quantity > 0 && !book.sell_levels.empty()) {
-                auto best_sell = book.getBestSell();
+                Order* best_sell = book.getBestSell();
                 uint64_t trade_qty = std::min(order->quantity, best_sell->quantity);
 
-                executeTrade(order, best_sell, best_sell->price, trade_qty);
+                executeTrade(order.get(), best_sell, best_sell->price, trade_qty);
 
                 order->quantity -= trade_qty;
                 best_sell->quantity -= trade_qty;
 
                 if (best_sell->quantity == 0) {
-                    book.removeSellOrder(best_sell);
+                    book.removeSellOrder(best_sell->price, trade_qty);
                 }
             }
         } else {
             while (order->quantity > 0 && !book.buy_levels.empty()) {
-                auto best_buy = book.getBestBuy();
+                Order* best_buy = book.getBestBuy();
                 uint64_t trade_qty = std::min(order->quantity, best_buy->quantity);
 
-                executeTrade(best_buy, order, best_buy->price, trade_qty);
+                executeTrade(best_buy, order.get(), best_buy->price, trade_qty);
 
                 order->quantity -= trade_qty;
                 best_buy->quantity -= trade_qty;
 
                 if (best_buy->quantity == 0) {
-                    book.removeBuyOrder(best_buy);
+                    book.removeBuyOrder(best_buy->price, trade_qty);
                 }
             }
         }
     }
 
-    void matchLimitOrder(std::shared_ptr<Order> order) {
-
+    void matchLimitOrder(std::unique_ptr<Order> order) {
         if (order->side == Side::BUY) {
             while (order->quantity > 0 && !book.sell_levels.empty()) {
-                auto best_sell = book.getBestSell();
+                Order* best_sell = book.getBestSell();
 
-                if (!canMatch(order, best_sell)) {
+                if (!canMatch(order.get(), best_sell)) {
                     break;
                 }
 
                 uint64_t trade_qty = std::min(order->quantity, best_sell->quantity);
-                executeTrade(order, best_sell, best_sell->price, trade_qty);
+                executeTrade(order.get(), best_sell, best_sell->price, trade_qty);
 
                 order->quantity -= trade_qty;
                 best_sell->quantity -= trade_qty;
 
                 if (best_sell->quantity == 0) {
-                    book.removeSellOrder(best_sell);
+                    book.removeSellOrder(best_sell->price, trade_qty);
                 }
             }
 
             if (order->quantity > 0) {
-                book.addBuyOrder(order);
+                book.addBuyOrder(std::move(order));  // передаем владение
             }
         } else {
             while (order->quantity > 0 && !book.buy_levels.empty()) {
-                auto best_buy = book.getBestBuy();
+                Order* best_buy = book.getBestBuy();
 
-                if (!canMatch(best_buy, order)) {
+                if (!canMatch(best_buy, order.get())) {
                     break;
                 }
 
                 uint64_t trade_qty = std::min(order->quantity, best_buy->quantity);
-                executeTrade(best_buy, order, best_buy->price, trade_qty);
+                executeTrade(best_buy, order.get(), best_buy->price, trade_qty);
 
                 order->quantity -= trade_qty;
                 best_buy->quantity -= trade_qty;
 
                 if (best_buy->quantity == 0) {
-                    this->book.removeBuyOrder(best_buy);
+                    book.removeBuyOrder(best_buy->price, trade_qty);
                 }
             }
 
             if (order->quantity > 0) {
-                this->book.addSellOrder(order);
+                book.addSellOrder(std::move(order));
             }
         }
     }
 
-    [[nodiscard]] bool canMatch(const std::shared_ptr<Order>& buy,
-                                const std::shared_ptr<Order>& sell) const {
+    [[nodiscard]] bool canMatch(const Order* buy, const Order* sell) const {
         return buy->price >= sell->price;
     }
 
-    void executeTrade(std::shared_ptr<Order> buy_order,
-                     std::shared_ptr<Order> sell_order,
-                     double price, uint64_t quantity) {
-        Trade trade(buy_order->order_id, sell_order->order_id, price, quantity, ++next_timestamp_);
-        //trades_.push_back(trade);
+    void executeTrade(const Order* buy_order, const Order* sell_order,
+                      int price, uint64_t quantity) {
+        Trade trade(buy_order->order_id, sell_order->order_id,
+                    price, quantity, ++next_timestamp_);
 
         if (trade_callback_) {
             trade_callback_(trade);
         }
     }
 
-//    OrderBook& getOrderBook(const std::string& symbol) {
-//        return order_books_[symbol];
-//    }
-
-    OrderBookHashMapPreAlloc book;
-    //std::map<std::string, OrderBook> order_books_;
-    //std::vector<Trade> trades_;
+    OrderBookHashMapPrealloc book;
     TradeCallback trade_callback_;
     uint64_t next_timestamp_;
 };

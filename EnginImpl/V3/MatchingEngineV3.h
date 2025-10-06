@@ -9,7 +9,7 @@
 // OPTIMIZED IMPLEMENTATION with unique_ptr
 // ============================================================================
 
-class OrderBookHashMap {
+class OrderBookHashMapV3 {
 public:
     struct PriceLevel {
         int price;
@@ -23,9 +23,17 @@ public:
     std::map<int, PriceLevel, std::greater<>> buy_levels;
     std::map<int, PriceLevel, std::less<>> sell_levels;
 
+    std::optional<int> cached_best_buy_price;
+    std::optional<int> cached_best_sell_price;
+
     void addBuyOrder(std::unique_ptr<Order> order) {
         int price = order->price;
         uint64_t quantity = order->quantity;
+
+        // Обновляем кеш: для buy больше = лучше
+        if (!cached_best_buy_price.has_value() || price > cached_best_buy_price.value()) {
+            cached_best_buy_price = price;
+        }
 
         auto [it, inserted] = buy_levels.try_emplace(price, price);
         auto& level = it->second;
@@ -36,6 +44,11 @@ public:
     void addSellOrder(std::unique_ptr<Order> order) {
         int price = order->price;
         uint64_t quantity = order->quantity;
+
+        // Обновляем кеш: для sell меньше = лучше
+        if (!cached_best_sell_price.has_value() || price < cached_best_sell_price.value()) {
+            cached_best_sell_price = price;
+        }
 
         auto [it, inserted] = sell_levels.try_emplace(price, price);
         auto& level = it->second;
@@ -48,11 +61,22 @@ public:
         if (it == buy_levels.end()) return;
 
         auto& level = it->second;
-        level.orders.pop_front();  // unique_ptr автоматически удалится
+        level.orders.pop_front();
         level.total_quantity -= quantity;
 
-        if (level.orders.empty()) {
-            buy_levels.erase(it);
+        // Если опустошили кешированный уровень - находим следующий лучший
+        if (level.orders.empty() &&
+            cached_best_buy_price.has_value() &&
+            cached_best_buy_price.value() == price) {
+
+            // Ищем следующий непустой уровень
+            cached_best_buy_price.reset();
+            for (auto& [p, lv] : buy_levels) {
+                if (!lv.orders.empty()) {
+                    cached_best_buy_price = p;
+                    break;
+                }
+            }
         }
     }
 
@@ -64,29 +88,46 @@ public:
         level.orders.pop_front();
         level.total_quantity -= quantity;
 
-        if (level.orders.empty()) {
-            sell_levels.erase(it);
+        // Если опустошили кешированный уровень - находим следующий лучший
+        if (level.orders.empty() &&
+            cached_best_sell_price.has_value() &&
+            cached_best_sell_price.value() == price) {
+
+            // Ищем следующий непустой уровень
+            cached_best_sell_price.reset();
+            for (auto& [p, lv] : sell_levels) {
+                if (!lv.orders.empty()) {
+                    cached_best_sell_price = p;
+                    break;
+                }
+            }
         }
     }
 
     [[nodiscard]] Order* getBestBuy() {
-        if (buy_levels.empty()) return nullptr;
-        auto& level = buy_levels.begin()->second;
-        return level.orders.front().get();
+        if (!cached_best_buy_price.has_value()) return nullptr;
+
+        auto it = buy_levels.find(cached_best_buy_price.value());
+        if (it == buy_levels.end() || it->second.orders.empty()) return nullptr;
+
+        return it->second.orders.front().get();
     }
 
     [[nodiscard]] Order* getBestSell() {
-        if (sell_levels.empty()) return nullptr;
-        auto& level = sell_levels.begin()->second;
-        return level.orders.front().get();
+        if (!cached_best_sell_price.has_value()) return nullptr;
+
+        auto it = sell_levels.find(cached_best_sell_price.value());
+        if (it == sell_levels.end() || it->second.orders.empty()) return nullptr;
+
+        return it->second.orders.front().get();
     }
 };
 
-class MatchingEngineV2 {
+class MatchingEngineV3 {
 public:
     using TradeCallback = std::function<void(const Trade&)>;
 
-    MatchingEngineV2() : next_timestamp_(0) {}
+    MatchingEngineV3() : next_timestamp_(0) {}
 
     static const char* name() {
         return "MatchingEngineV2";
@@ -127,7 +168,7 @@ private:
 
     void matchMarketOrder(std::unique_ptr<Order> order) {
         if (order->side == Side::BUY) {
-            while (order->quantity > 0 && !book.sell_levels.empty()) {
+            while (order->quantity > 0 && book.cached_best_sell_price.has_value()) {
                 Order* best_sell = book.getBestSell();
                 uint64_t trade_qty = std::min(order->quantity, best_sell->quantity);
 
@@ -141,7 +182,7 @@ private:
                 }
             }
         } else {
-            while (order->quantity > 0 && !book.buy_levels.empty()) {
+            while (order->quantity > 0 && book.cached_best_buy_price.has_value()) {
                 Order* best_buy = book.getBestBuy();
                 uint64_t trade_qty = std::min(order->quantity, best_buy->quantity);
 
@@ -160,7 +201,7 @@ private:
 
     void matchLimitOrder(std::unique_ptr<Order> order) {
         if (order->side == Side::BUY) {
-            while (order->quantity > 0 && !book.sell_levels.empty()) {
+            while (order->quantity > 0 && book.cached_best_sell_price.has_value()) {
                 Order* best_sell = book.getBestSell();
 
                 if (!canMatch(order.get(), best_sell)) {
@@ -182,7 +223,7 @@ private:
                 book.addBuyOrder(std::move(order));  // передаем владение
             }
         } else {
-            while (order->quantity > 0 && !book.buy_levels.empty()) {
+            while (order->quantity > 0 && book.cached_best_buy_price.has_value()) {
                 Order* best_buy = book.getBestBuy();
 
                 if (!canMatch(best_buy, order.get())) {
@@ -221,7 +262,7 @@ private:
         }
     }
 
-    OrderBookHashMap book;
+    OrderBookHashMapV3 book;
     TradeCallback trade_callback_;
     uint64_t next_timestamp_;
 };

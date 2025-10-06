@@ -13,7 +13,7 @@
 // ============================================================================
 
 struct BuyComparator {
-    bool operator()(const std::shared_ptr<Order>& a, const std::shared_ptr<Order>& b) const {
+    bool operator()(const std::unique_ptr<Order>& a, const std::unique_ptr<Order>& b) const {
         if (a->price != b->price) {
             return a->price > b->price;
         }
@@ -22,7 +22,7 @@ struct BuyComparator {
 };
 
 struct SellComparator {
-    bool operator()(const std::shared_ptr<Order>& a, const std::shared_ptr<Order>& b) const {
+    bool operator()(const std::unique_ptr<Order>& a, const std::unique_ptr<Order>& b) const {
         if (a->price != b->price) {
             return a->price < b->price;
         }
@@ -32,33 +32,33 @@ struct SellComparator {
 
 class OrderBook {
 public:
-    using BuyBook = std::multiset<std::shared_ptr<Order>, BuyComparator>;
-    using SellBook = std::multiset<std::shared_ptr<Order>, SellComparator>;
+    using BuyBook = std::multiset<std::unique_ptr<Order>, BuyComparator>;
+    using SellBook = std::multiset<std::unique_ptr<Order>, SellComparator>;
 
     BuyBook buy_orders;
     SellBook sell_orders;
 
-    void addBuyOrder(std::shared_ptr<Order> order) {
+    void addBuyOrder(std::unique_ptr<Order> order) {
         buy_orders.insert(order);
     }
 
-    void addSellOrder(std::shared_ptr<Order> order) {
+    void addSellOrder(std::unique_ptr<Order> order) {
         sell_orders.insert(order);
     }
 
-    void removeBuyOrder(std::shared_ptr<Order> order) {
+    void removeBuyOrder(std::unique_ptr<Order> order) {
         buy_orders.erase(order);
     }
 
-    void removeSellOrder(std::shared_ptr<Order> order) {
+    void removeSellOrder(std::unique_ptr<Order> order) {
         sell_orders.erase(order);
     }
 
-    [[nodiscard]] std::shared_ptr<Order> getBestBuy() const {
+    [[nodiscard]] Order* getBestBuy() const {
         return buy_orders.empty() ? nullptr : *buy_orders.begin();
     }
 
-    [[nodiscard]] std::shared_ptr<Order> getBestSell() const {
+    [[nodiscard]] Order* getBestSell() const {
         return sell_orders.empty() ? nullptr : *sell_orders.begin();
     }
 };

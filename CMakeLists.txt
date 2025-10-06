@@ -58,9 +58,10 @@ target_link_libraries(performance_benchmarks
 
 add_executable(baseline_benchmark
         main.cpp
-        Order.h
+        EngineConcept/Order.h
         MatchingEngineConcept.h
         EngineTestTypes.h
+        EnginImpl/V3/MatchingEngineV3.h
 )
 
 target_link_libraries(baseline_benchmark PRIVATE)

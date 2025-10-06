@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -g -O2 -pg
+CXXFLAGS = -std=c++20 -g -O2 -pg
 TARGET = myapp
 
 all: $(TARGET)
