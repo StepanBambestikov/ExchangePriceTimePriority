@@ -4,6 +4,7 @@
 #include <memory>
 #include <deque>
 #include <functional>
+#include <optional>
 
 // ============================================================================
 // OPTIMIZED IMPLEMENTATION with unique_ptr
@@ -71,11 +72,15 @@ public:
 
             // Ищем следующий непустой уровень
             cached_best_buy_price.reset();
-            for (auto& [p, lv] : buy_levels) {
-                if (!lv.orders.empty()) {
-                    cached_best_buy_price = p;
+            auto next_it = it;
+            ++next_it;  // O(1) в большинстве случаев
+
+            while (next_it != buy_levels.end()) {
+                if (!next_it->second.orders.empty()) {
+                    cached_best_buy_price = next_it->first;
                     break;
                 }
+                ++next_it;
             }
         }
     }
@@ -93,13 +98,17 @@ public:
             cached_best_sell_price.has_value() &&
             cached_best_sell_price.value() == price) {
 
-            // Ищем следующий непустой уровень
             cached_best_sell_price.reset();
-            for (auto& [p, lv] : sell_levels) {
-                if (!lv.orders.empty()) {
-                    cached_best_sell_price = p;
+
+            auto next_it = it;
+            ++next_it;  // O(1) в большинстве случаев
+
+            while (next_it != sell_levels.end()) {
+                if (!next_it->second.orders.empty()) {
+                    cached_best_sell_price = next_it->first;
                     break;
                 }
+                ++next_it;
             }
         }
     }
