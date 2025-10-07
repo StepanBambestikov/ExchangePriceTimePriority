@@ -1,4 +1,5 @@
 #include "./EngineConcept/MatchingEngineConcept.h"
+#include "EnginImpl/V4/MatchingEngineV4.h"
 #include "EnginImpl/V3/MatchingEngineV3.h"
 #include <chrono>
 #include <random>
@@ -99,8 +100,14 @@ int main() {
     std::cout << "Starting baseline performance test...\n";
     std::cout << "Testing with " << NUM_ORDERS << " orders\n\n";
 
-    auto metrics1 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
-    metrics1.print("BASELINE - MatchingEngineV2");
+    auto metrics1 = runBenchmark<MatchingEngineV4>(NUM_ORDERS);
+    metrics1.print("BASELINE - MatchingEngineV4");
+    auto metrics2 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
+    metrics2.print("BASELINE - MatchingEngineV3");
+    auto metrics3 = runBenchmark<MatchingEngineV4>(NUM_ORDERS);
+    metrics3.print("BASELINE - MatchingEngineV4");
+    auto metrics4 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
+    metrics4.print("BASELINE - MatchingEngineV3");
 
     std::cout << "\n📝 Baseline complete.\n";
 

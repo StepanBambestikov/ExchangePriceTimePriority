@@ -2,8 +2,14 @@ cmake_minimum_required(VERSION 3.29)
 project(price_time_priority)
 
 set(CMAKE_CXX_STANDARD 20)
+include_directories(/opt/homebrew/include)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+
+set(BOOST_ROOT "/opt/homebrew/opt/boost")
+find_package(Boost REQUIRED)
+include_directories(${Boost_INCLUDE_DIRS})
+include_directories(${CMAKE_SOURCE_DIR}/external)
 
 # Optimization flags
 if(NOT CMAKE_BUILD_TYPE)
@@ -59,9 +65,10 @@ target_link_libraries(performance_benchmarks
 add_executable(baseline_benchmark
         main.cpp
         EngineConcept/Order.h
-        MatchingEngineConcept.h
+        EngineConcept/MatchingEngineConcept.h
         EngineTestTypes.h
         EnginImpl/V3/MatchingEngineV3.h
+        EnginImpl/V4/MatchingEngineV4.h
 )
 
 target_link_libraries(baseline_benchmark PRIVATE)

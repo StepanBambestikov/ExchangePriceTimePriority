@@ -5,20 +5,28 @@
 #include <deque>
 #include <functional>
 #include <optional>
+#include <boost/pool/pool_alloc.hpp>
 
 // ============================================================================
 // OPTIMIZED IMPLEMENTATION with unique_ptr
 // ============================================================================
 
-class OrderBookHashMapV3 {
+using DequeAlloc = boost::pool_allocator<std::unique_ptr<Order>>;
+
+class OrderBookHashMapV4 {
+private:
+    //std::array<char, 2 * 1024 * 1024> buffer_;
 public:
     struct PriceLevel {
         int price;
-        std::deque<std::unique_ptr<Order>> orders;
+        std::deque<std::unique_ptr<Order>, DequeAlloc> orders;
         uint64_t total_quantity;
 
         PriceLevel() : price(0), total_quantity(0) {}
         explicit PriceLevel(int p) : price(p), total_quantity(0) {}
+
+        PriceLevel(int p, DequeAlloc alloc)
+                : price(p), orders(alloc), total_quantity(0) {}
     };
 
     std::map<int, PriceLevel, std::greater<>> buy_levels;
@@ -31,30 +39,50 @@ public:
         int price = order->price;
         uint64_t quantity = order->quantity;
 
+        DequeAlloc alloc;
+
         // Обновляем кеш: для buy больше = лучше
         if (!cached_best_buy_price.has_value() || price > cached_best_buy_price.value()) {
             cached_best_buy_price = price;
         }
 
-        auto [it, inserted] = buy_levels.try_emplace(price, price);
-        auto& level = it->second;
-        level.orders.push_back(std::move(order));
-        level.total_quantity += quantity;
+//        auto [it, inserted] = buy_levels.try_emplace(price, price);
+//        auto& level = it->second;
+//        level.orders.push_back(std::move(order));
+//        level.total_quantity += quantity;
+        auto [it, inserted] = buy_levels.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(price),
+                std::forward_as_tuple(price, alloc)
+        );
+
+        it->second.orders.push_back(std::move(order));
+        it->second.total_quantity += quantity;
     }
 
     void addSellOrder(std::unique_ptr<Order> order) {
         int price = order->price;
         uint64_t quantity = order->quantity;
 
+        DequeAlloc alloc;
+
         // Обновляем кеш: для sell меньше = лучше
         if (!cached_best_sell_price.has_value() || price < cached_best_sell_price.value()) {
             cached_best_sell_price = price;
         }
 
-        auto [it, inserted] = sell_levels.try_emplace(price, price);
-        auto& level = it->second;
-        level.orders.push_back(std::move(order));
-        level.total_quantity += quantity;
+//        auto [it, inserted] = sell_levels.try_emplace(price, price);
+//        auto& level = it->second;
+//        level.orders.push_back(std::move(order));
+//        level.total_quantity += quantity;
+        auto [it, inserted] = sell_levels.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(price),
+                std::forward_as_tuple(price, alloc)
+        );
+
+        it->second.orders.push_back(std::move(order));
+        it->second.total_quantity += quantity;
     }
 
     void removeBuyOrder(int price, uint64_t quantity) {
@@ -132,11 +160,11 @@ public:
     }
 };
 
-class MatchingEngineV3 {
+class MatchingEngineV4 {
 public:
     using TradeCallback = std::function<void(const Trade&)>;
 
-    MatchingEngineV3() : next_timestamp_(0) {}
+    MatchingEngineV4() : next_timestamp_(0) {}
 
     static const char* name() {
         return "MatchingEngineV2";
@@ -270,7 +298,7 @@ private:
         }
     }
 
-    OrderBookHashMapV3 book;
+    OrderBookHashMapV4 book;
     TradeCallback trade_callback_;
     uint64_t next_timestamp_;
 };
