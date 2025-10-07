@@ -11,7 +11,7 @@
 // OPTIMIZED IMPLEMENTATION with unique_ptr
 // ============================================================================
 
-using DequeAlloc = boost::pool_allocator<std::unique_ptr<Order>>;
+using DequeAlloc = boost::fast_pool_allocator<std::unique_ptr<Order>>;
 
 class OrderBookHashMapV4 {
 private:
