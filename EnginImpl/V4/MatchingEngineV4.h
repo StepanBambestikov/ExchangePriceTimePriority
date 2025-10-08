@@ -50,11 +50,17 @@ public:
 //        auto& level = it->second;
 //        level.orders.push_back(std::move(order));
 //        level.total_quantity += quantity;
-        auto [it, inserted] = buy_levels.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(price),
-                std::forward_as_tuple(price, alloc)
+//        auto [it, inserted] = buy_levels.emplace(
+//                std::piecewise_construct,
+//                std::forward_as_tuple(price),
+//                std::forward_as_tuple(price, alloc)
+//        );
+        auto [it, inserted] = buy_levels.try_emplace(
+                price,
+                price,
+                alloc
         );
+
 
         it->second.orders.push_back(std::move(order));
         it->second.total_quantity += quantity;
@@ -75,10 +81,10 @@ public:
 //        auto& level = it->second;
 //        level.orders.push_back(std::move(order));
 //        level.total_quantity += quantity;
-        auto [it, inserted] = sell_levels.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(price),
-                std::forward_as_tuple(price, alloc)
+        auto [it, inserted] = sell_levels.try_emplace(
+                price,
+                price,
+                alloc
         );
 
         it->second.orders.push_back(std::move(order));
