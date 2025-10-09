@@ -5,28 +5,91 @@
 #include <deque>
 #include <functional>
 #include <optional>
-#include <boost/pool/pool_alloc.hpp>
 
-// ============================================================================
-// OPTIMIZED IMPLEMENTATION with unique_ptr
-// ============================================================================
-
-using DequeAlloc = boost::fast_pool_allocator<std::unique_ptr<Order>>;
 
 class OrderBookHashMapV4 {
 private:
     //std::array<char, 2 * 1024 * 1024> buffer_;
+    static constexpr size_t INITIAL_CAPACITY = 400000;
 public:
     struct PriceLevel {
         int price;
-        std::deque<std::unique_ptr<Order>, DequeAlloc> orders;
+        std::vector<std::unique_ptr<Order>> orders;
+        size_t head_idx;  // индекс следующего элемента для удаления
+        size_t tail_idx;  // индекс следующего места для вставки
         uint64_t total_quantity;
 
-        PriceLevel() : price(0), total_quantity(0) {}
-        explicit PriceLevel(int p) : price(p), total_quantity(0) {}
+        PriceLevel() : price(0), head_idx(0), tail_idx(0), total_quantity(0) {
+            orders.reserve(INITIAL_CAPACITY);
+            orders.resize(INITIAL_CAPACITY);
+        }
 
-        PriceLevel(int p, DequeAlloc alloc)
-                : price(p), orders(alloc), total_quantity(0) {}
+        explicit PriceLevel(int p) : price(p), head_idx(0), tail_idx(0), total_quantity(0) {
+            orders.reserve(INITIAL_CAPACITY);
+            orders.resize(INITIAL_CAPACITY);
+        }
+
+        [[nodiscard]] bool empty() const {
+            return head_idx == tail_idx;
+        }
+
+        [[nodiscard]] size_t size() const {
+            if (tail_idx >= head_idx) {
+                return tail_idx - head_idx;
+            } else {
+                return orders.size() - head_idx + tail_idx;
+            }
+        }
+
+        void push_back(std::unique_ptr<Order> order) {
+            orders[tail_idx] = std::move(order);
+            tail_idx = (tail_idx + 1) % orders.size();
+
+            // Проверка переполнения: если tail догнал head
+            if (tail_idx == head_idx) {
+                resize();
+            }
+        }
+
+        std::unique_ptr<Order>& front() {
+            return orders[head_idx];
+        }
+
+        void pop_front() {
+            //orders[head_idx].reset();  // освобождаем память
+            head_idx = (head_idx + 1) % orders.size();
+        }
+
+    private:
+        void resize() {
+            size_t old_size = orders.size();
+            size_t new_size = old_size * 2;
+            std::vector<std::unique_ptr<Order>> new_orders;
+            new_orders.reserve(new_size);
+            new_orders.resize(new_size);
+
+            // Resize вызывается только когда tail догнал head (буфер полон)
+            // Данные всегда в двух кусках: [head...end) и [0...tail)
+
+            size_t first_part = old_size - head_idx;  // от head до конца
+            size_t second_part = tail_idx;             // от начала до tail (который == head)
+
+            // Копируем первую часть в конец нового массива
+            std::move(orders.begin() + head_idx,
+                      orders.end(),
+                      new_orders.begin() + (new_size - first_part));
+
+            // Копируем вторую часть в начало нового массива
+            std::move(orders.begin(),
+                      orders.begin() + tail_idx,
+                      new_orders.begin());
+
+            // Теперь максимальный разрыв между tail и head
+            head_idx = new_size - first_part;
+            tail_idx = second_part;
+
+            orders = std::move(new_orders);
+        }
     };
 
     std::map<int, PriceLevel, std::greater<>> buy_levels;
@@ -38,8 +101,6 @@ public:
     void addBuyOrder(std::unique_ptr<Order> order) {
         int price = order->price;
         uint64_t quantity = order->quantity;
-
-        DequeAlloc alloc;
 
         // Обновляем кеш: для buy больше = лучше
         if (!cached_best_buy_price.has_value() || price > cached_best_buy_price.value()) {
@@ -57,12 +118,11 @@ public:
 //        );
         auto [it, inserted] = buy_levels.try_emplace(
                 price,
-                price,
-                alloc
+                price
         );
 
 
-        it->second.orders.push_back(std::move(order));
+        it->second.push_back(std::move(order));
         it->second.total_quantity += quantity;
     }
 
@@ -70,7 +130,6 @@ public:
         int price = order->price;
         uint64_t quantity = order->quantity;
 
-        DequeAlloc alloc;
 
         // Обновляем кеш: для sell меньше = лучше
         if (!cached_best_sell_price.has_value() || price < cached_best_sell_price.value()) {
@@ -83,11 +142,10 @@ public:
 //        level.total_quantity += quantity;
         auto [it, inserted] = sell_levels.try_emplace(
                 price,
-                price,
-                alloc
+                price
         );
 
-        it->second.orders.push_back(std::move(order));
+        it->second.push_back(std::move(order));
         it->second.total_quantity += quantity;
     }
 
@@ -96,11 +154,11 @@ public:
         if (it == buy_levels.end()) return;
 
         auto& level = it->second;
-        level.orders.pop_front();
+        level.pop_front();
         level.total_quantity -= quantity;
 
         // Если опустошили кешированный уровень - находим следующий лучший
-        if (level.orders.empty() &&
+        if (level.empty() &&
             cached_best_buy_price.has_value() &&
             cached_best_buy_price.value() == price) {
 
@@ -110,7 +168,7 @@ public:
             ++next_it;  // O(1) в большинстве случаев
 
             while (next_it != buy_levels.end()) {
-                if (!next_it->second.orders.empty()) {
+                if (!next_it->second.empty()) {
                     cached_best_buy_price = next_it->first;
                     break;
                 }
@@ -124,11 +182,11 @@ public:
         if (it == sell_levels.end()) return;
 
         auto& level = it->second;
-        level.orders.pop_front();
+        level.pop_front();
         level.total_quantity -= quantity;
 
         // Если опустошили кешированный уровень - находим следующий лучший
-        if (level.orders.empty() &&
+        if (level.empty() &&
             cached_best_sell_price.has_value() &&
             cached_best_sell_price.value() == price) {
 
@@ -138,7 +196,7 @@ public:
             ++next_it;  // O(1) в большинстве случаев
 
             while (next_it != sell_levels.end()) {
-                if (!next_it->second.orders.empty()) {
+                if (!next_it->second.empty()) {
                     cached_best_sell_price = next_it->first;
                     break;
                 }
@@ -151,18 +209,18 @@ public:
         if (!cached_best_buy_price.has_value()) return nullptr;
 
         auto it = buy_levels.find(cached_best_buy_price.value());
-        if (it == buy_levels.end() || it->second.orders.empty()) return nullptr;
+        if (it == buy_levels.end() || it->second.empty()) return nullptr;
 
-        return it->second.orders.front().get();
+        return it->second.front().get();
     }
 
     [[nodiscard]] Order* getBestSell() {
         if (!cached_best_sell_price.has_value()) return nullptr;
 
         auto it = sell_levels.find(cached_best_sell_price.value());
-        if (it == sell_levels.end() || it->second.orders.empty()) return nullptr;
+        if (it == sell_levels.end() || it->second.empty()) return nullptr;
 
-        return it->second.orders.front().get();
+        return it->second.front().get();
     }
 };
 
