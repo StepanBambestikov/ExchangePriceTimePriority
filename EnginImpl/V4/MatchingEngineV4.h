@@ -10,7 +10,7 @@
 class OrderBookHashMapV4 {
 private:
     //std::array<char, 2 * 1024 * 1024> buffer_;
-    static constexpr size_t INITIAL_CAPACITY = 400000;
+    static constexpr size_t INITIAL_CAPACITY = 131072;
 public:
     struct PriceLevel {
         int price;
@@ -64,6 +64,7 @@ public:
         void resize() {
             size_t old_size = orders.size();
             size_t new_size = old_size * 2;
+            std::cout << "resize from " << orders.size() << " to " << old_size * 2;
             std::vector<std::unique_ptr<Order>> new_orders;
             new_orders.reserve(new_size);
             new_orders.resize(new_size);
