@@ -102,12 +102,12 @@ int main() {
 
     auto metrics1 = runBenchmark<MatchingEngineV4>(NUM_ORDERS);
     metrics1.print("BASELINE - MatchingEngineV4");
-//    auto metrics2 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
-//    metrics2.print("BASELINE - MatchingEngineV3");
-//    auto metrics3 = runBenchmark<MatchingEngineV4>(NUM_ORDERS);
-//    metrics3.print("BASELINE - MatchingEngineV4");
-//    auto metrics4 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
-//    metrics4.print("BASELINE - MatchingEngineV3");
+    auto metrics2 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
+    metrics2.print("BASELINE - MatchingEngineV3");
+    auto metrics3 = runBenchmark<MatchingEngineV4>(NUM_ORDERS);
+    metrics3.print("BASELINE - MatchingEngineV4");
+    auto metrics4 = runBenchmark<MatchingEngineV3>(NUM_ORDERS);
+    metrics4.print("BASELINE - MatchingEngineV3");
 
     std::cout << "\n📝 Baseline complete.\n";
 
