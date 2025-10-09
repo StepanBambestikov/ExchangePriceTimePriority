@@ -64,7 +64,7 @@ public:
         void resize() {
             size_t old_size = orders.size();
             size_t new_size = old_size * 2;
-            std::cout << "resize from " << orders.size() << " to " << old_size * 2;
+            //std::cout << "resize from " << orders.size() << " to " << old_size * 2;
             std::vector<std::unique_ptr<Order>> new_orders;
             new_orders.reserve(new_size);
             new_orders.resize(new_size);
